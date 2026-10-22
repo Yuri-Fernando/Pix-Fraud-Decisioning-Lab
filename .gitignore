@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+*.sqlite
+*.sqlite3
+data/
+delta_out/
+spark-warehouse/
+metastore_db/
+derby.log
+.ipynb_checkpoints/
