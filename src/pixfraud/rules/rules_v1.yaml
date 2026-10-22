@@ -1,0 +1,122 @@
+# Regras antifraude versionadas (v1). Cada regra: condição sobre features gold, ação, peso e reason code.
+# Operadores: >=, >, <=, <, ==, !=, in. "$nome" referencia um item de `params` (ajustável na varredura de limiar).
+# Pesos são hipóteses de partida para a simulação — não foram calibrados com dados reais.
+version: "1.0.0"
+rules:
+  - id: PIX001
+    name: Novo favorecido com valor alto
+    action: REVIEW
+    weight: 0.40
+    reason_code: PIX_NEW_BENEFICIARY_HIGH_AMOUNT
+    params: { min_amount: 5000 }
+    when:
+      all:
+        - { feature: is_new_beneficiary, op: "==", value: true }
+        - { feature: amount, op: ">=", value: "$min_amount" }
+
+  - id: PIX002
+    name: Valor muito acima do comportamento histórico do remetente
+    action: REVIEW
+    weight: 0.45
+    reason_code: PIX_AMOUNT_ANOMALY
+    params: { min_ratio: 10, min_amount: 1000 }
+    when:
+      all:
+        - { feature: amount_ratio, op: ">=", value: "$min_ratio" }
+        - { feature: amount, op: ">=", value: "$min_amount" }
+
+  - id: PIX003
+    name: Destinatário com conta muito recente e valor relevante
+    action: REVIEW
+    weight: 0.35
+    reason_code: PIX_YOUNG_RECEIVER_ACCOUNT
+    params: { max_age_days: 7, min_amount: 2000 }
+    when:
+      all:
+        - { feature: receiver_age_days, op: "<", value: "$max_age_days" }
+        - { feature: amount, op: ">=", value: "$min_amount" }
+
+  - id: VELOCITY001
+    name: Rajada de transações do mesmo remetente em 5 minutos
+    action: REVIEW
+    weight: 0.50
+    reason_code: VELOCITY_BURST_5M
+    params: { min_tx_5m: 5 }
+    when:
+      all:
+        - { feature: sender_tx_count_5m, op: ">=", value: "$min_tx_5m" }
+
+  - id: DEVICE001
+    name: Dispositivo novo com valor fora do padrão
+    action: REVIEW
+    weight: 0.45
+    reason_code: DEVICE_CHANGE_UNUSUAL_AMOUNT
+    params: { min_ratio: 3, min_amount: 1000 }
+    when:
+      all:
+        - { feature: new_device, op: "==", value: true }
+        - { feature: amount_ratio, op: ">=", value: "$min_ratio" }
+        - { feature: amount, op: ">=", value: "$min_amount" }
+
+  - id: MULE001
+    name: Destinatário recebendo de muitos remetentes distintos em 30 minutos
+    action: REVIEW
+    weight: 0.50
+    reason_code: MULE_FAN_IN_30M
+    params: { min_senders: 5 }
+    when:
+      all:
+        - { feature: receiver_fan_in_30m, op: ">=", value: "$min_senders" }
+
+  - id: MULE002
+    name: Dispersão rápida de valores recém-recebidos de vários remetentes
+    action: BLOCK
+    weight: 0.80
+    reason_code: MULE_RAPID_CASH_OUT
+    params: { min_inflow_senders: 5, min_outflow_ratio: 0.5 }
+    when:
+      all:
+        - { feature: sender_inflow_senders_30m, op: ">=", value: "$min_inflow_senders" }
+        - { feature: sender_outflow_ratio_15m, op: ">=", value: "$min_outflow_ratio" }
+
+  - id: FANOUT001
+    name: Pulverização para muitos favorecidos novos em 15 minutos
+    action: REVIEW
+    weight: 0.50
+    reason_code: FAN_OUT_NEW_BENEFICIARIES
+    params: { min_receivers: 5 }
+    when:
+      all:
+        - { feature: sender_fan_out_15m, op: ">=", value: "$min_receivers" }
+        - { feature: is_new_beneficiary, op: "==", value: true }
+
+  - id: GRAPH001
+    name: Transação em ciclo ou cadeia de encaminhamento rápido (grafo)
+    action: BLOCK
+    weight: 0.80
+    reason_code: GRAPH_CYCLE_OR_CHAIN
+    params: { patterns: [cycle, chain] }
+    when:
+      all:
+        - { feature: graph_pattern, op: in, value: "$patterns" }
+
+  - id: GRAPH002
+    name: Transação ligada a hub de mula detectado no grafo
+    action: REVIEW
+    weight: 0.60
+    reason_code: GRAPH_MULE_HUB
+    params: { patterns: [mule_hub] }
+    when:
+      all:
+        - { feature: graph_pattern, op: in, value: "$patterns" }
+
+  - id: MED001
+    name: Destinatário com histórico de contestações MED
+    action: REVIEW
+    weight: 0.40
+    reason_code: MED_RECEIVER_HISTORY
+    params: { min_prior_med: 2, min_amount: 500 }
+    when:
+      all:
+        - { feature: receiver_prior_med_count, op: ">=", value: "$min_prior_med" }
+        - { feature: amount, op: ">=", value: "$min_amount" }
